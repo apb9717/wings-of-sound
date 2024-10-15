@@ -28,6 +28,7 @@ The main advantage for building an API for our project is efficient data managem
 - Python 3.11 or higher
 - MySQL server, with appropriate host, username, password, database name
 - pip (Python package manager)
+- Postman
 
 ## Setup
 
