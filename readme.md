@@ -119,3 +119,5 @@ Upon running the main.py script, your laptop is serving as a local server that l
 7. Click Send
 8. Check the response to confirm if the data was created successfully. A 201 or 200 status code typically indicates success.
 
+Upon finishing making requests, go back to your IDE and turn off the local server using Control + C.
+
