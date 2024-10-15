@@ -10,4 +10,4 @@ capacity = integer<br />
 style = list of strings (e.g. ["Theater","Performance Space"])<br />
 keywords = list of strings (e.g. ["Intimate","Classy","Modern"])
 
-The main advantage for building an API for our project is efficient data management. Having an API not only adds flexibility with functions to modify and remove data, but also allows reusability of the data. 
+The main advantage for building an API for our project is efficient data management. Having an API not only adds flexibility with functions to modify and remove data, but also allows reusability of the data. Additionally, it also provides a centralized access to Venue data and facilitates collaboration. 
