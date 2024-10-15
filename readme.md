@@ -1,19 +1,6 @@
 # Wings of Sounds API
 <<<<<<< HEAD
 The key entity we chose for our API is Venue since venue data will be the most essential component for our analysis. 
-=======
-The key entity we chose for our API is Venue since Venue data will be the most essential component for our analysis. The attributes include: <br /> 
-
-id = string (unique identifier)<br />
-name = string <br /> 
-city = string<br />
-zipcode = integer<br />
-phone = integer<br />
-capacity = integer<br />
-style = list of strings (e.g. ["Theater","Performance Space"])<br />
-keywords = list of strings (e.g. ["Intimate","Classy","Modern"])
-
-The main advantage for building an API for our project is efficient data management. Having an API not only adds flexibility with functions to modify and remove data, but also allows reusability of the data. Additionally, it also provides a centralized access to Venue data and facilitates collaboration.
 
 ## Features
 - CREATE non-existing venue(s) in the venues table by making a POST request through endpoint /venues/
@@ -121,5 +108,24 @@ Upon running the main.py script, your laptop is serving as a local server that l
 8. Check the response to confirm if the data was created successfully. A 201 or 200 status code typically indicates success.
 
 
- 
+
+
+
+
+
+
+
+=======
+The key entity we chose for our API is Venue since Venue data will be the most essential component for our analysis. The attributes include: <br /> 
+
+id = string (unique identifier)<br />
+name = string <br /> 
+city = string<br />
+zipcode = integer<br />
+phone = integer<br />
+capacity = integer<br />
+style = list of strings (e.g. ["Theater","Performance Space"])<br />
+keywords = list of strings (e.g. ["Intimate","Classy","Modern"])
+
+The main advantage for building an API for our project is efficient data management. Having an API not only adds flexibility with functions to modify and remove data, but also allows reusability of the data. Additionally, it also provides a centralized access to Venue data and facilitates collaboration. 
 >>>>>>> refs/remotes/origin/main
