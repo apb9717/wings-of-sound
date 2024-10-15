@@ -1,7 +1,5 @@
 # Wings of Sounds API
-The key entity we chose for our API is Venue since venue data will be the most essential component for our analysis. 
-
-The key entity we chose for our API is Venue since Venue data will be the most essential component for our analysis. The attributes include: <br /> 
+The key entity we chose for our API is Venue since venue data will be the most essential component for our analysis.  The attributes include: <br /> 
 
 id = string (unique identifier)<br />
 name = string <br /> 
