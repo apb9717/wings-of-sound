@@ -34,7 +34,7 @@ The main advantage for building an API for our project is efficient data managem
 
 1. Clone the repository or download the source code.
    ```
-   git clone https://github.com/projects-in-programming-f24/campy.git
+   git clone https://github.com/projects-in-programming-f24/wings-of-sound.git
    ```
    
 2. Navigate to the project's directory
