@@ -138,7 +138,6 @@ def calculate_weighted_match_score(user_input, venue, model):
 
     return final_score  # Return as a percentage
 
-
 @app.get("/venues/")
 async def get_all_venues(db: Session = Depends(get_db)):
     venues = db.query(Venues).all()
