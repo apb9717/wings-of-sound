@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
-from sqlalchemy import Column, Integer, String, create_engine, Text
+from sqlalchemy import Column, Integer, String, Text, create_engine, LargeBinary
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +8,9 @@ import os
 from dotenv import load_dotenv
 import mysql.connector
 import numpy as np
+import base64
+from PIL import Image
+from io import BytesIO
 
 app = FastAPI()
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -69,6 +72,9 @@ class Venues(Base):
     capacity = Column(Integer)
     style = Column(String(100))
     keywords = Column(Text)
+    photo = Column(LargeBinary)  # Image URL for the venue
+
+
 
 def calculate_weighted_match_score(user_input, venue, model):
     weights = {
@@ -80,19 +86,32 @@ def calculate_weighted_match_score(user_input, venue, model):
     match_score = 0
     max_score = sum(weights.values())
 
+    # City Scoring
+    city_similarity = 0
+    if user_input.get('city') and venue.city:
+        # Exact Match for City (strict matching: only "Brooklyn" or "Manhattan")
+        if user_input['city'].strip().lower() == venue.city.strip().lower():
+            city_similarity = 1  # Perfect match
+        else:
+            # If city doesn't match, set similarity to 0
+            city_similarity = 0
+
+    # Apply city score directly to match score
+    match_score += city_similarity * weights['city']
+
     # Capacity Scoring
     if user_input.get('capacity') and venue.capacity:
         try:
             user_capacity = user_input['capacity']
             
-            # Handle open-ended capacity with '+'
+            # Handle open-ended capacity with '+' (e.g., "200+")
             if '+' in user_capacity:
                 user_min_capacity = int(user_capacity.replace('+', '').strip())
                 user_max_capacity = float('inf')  # No upper limit
             else:
-                user_capacity_range = user_capacity.split('-')
-                user_min_capacity = int(user_capacity_range[0].strip())
-                user_max_capacity = int(user_capacity_range[1].strip()) if len(user_capacity_range) > 1 else float('inf')
+                # If user capacity is just a single number, convert to int
+                user_min_capacity = int(user_capacity)
+                user_max_capacity = user_min_capacity
 
             venue_capacity = venue.capacity
 
@@ -109,24 +128,13 @@ def calculate_weighted_match_score(user_input, venue, model):
         except ValueError:
             print("Capacity input format is invalid:", user_input['capacity'])
 
-
-    # City Scoring
-    if user_input.get('city') and venue.city:
-        if user_input['city'].lower() == venue.city.lower():
-            city_similarity = 1
-        else:
-            city_similarity = util.pytorch_cos_sim(
-                model.encode(user_input['city'].lower()),
-                model.encode(venue.city.lower())
-            ).item()
-        match_score += city_similarity * weights['city']
-
     # Style Scoring
     if user_input.get('style') and venue.style:
         user_styles = set(user_input['style'].lower().split(','))
         venue_styles = set(venue.style.lower().split(','))
         style_overlap = len(user_styles.intersection(venue_styles))
         style_similarity = style_overlap / max(len(user_styles), len(venue_styles))
+
         match_score += style_similarity * weights['style']
 
     # Keyword Scoring
@@ -140,31 +148,44 @@ def calculate_weighted_match_score(user_input, venue, model):
             model.encode(', '.join(venue_keywords))
         ).item()
         keyword_similarity = 0.7 * exact_match_score + 0.3 * semantic_similarity
+
         match_score += keyword_similarity * weights['keywords']
 
+
+    # Normalize the score (we apply the city penalty before normalizing)
     normalized_score = match_score / max_score
-    final_score = min(normalized_score * 1.5, 1.0)
+    final_score = min(normalized_score * 1.5, 1.0)  # Ensure the final score does not exceed 1.0
+
     return final_score
 
 
+def process_image(photo):
+    if photo:
+        img = Image.open(BytesIO(photo))
+        img = img.convert('RGB')
+        buffered = BytesIO()
+        img.save(buffered, format="JPEG", quality=85)
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+    return None
+
+
+# Update the response to include the image_url
 @app.get("/venues/")
 async def get_all_venues(db: Session = Depends(get_db)):
     venues = db.query(Venues).all()
-    response = [
-        {
-            "id": v.id,
-            "name": v.name,
-            "city": v.city,
-            "zipcode": v.zipcode,
-            "phone": v.phone,
-            "email": v.email,
-            "capacity": v.capacity,
-            "style": v.style,
-            "keywords": v.keywords,
-            "inquiry_url": v.inquiry_url
-        }
-        for v in venues
-    ]
+    response = [{
+        "id": v.id,
+        "name": v.name,
+        "city": v.city,
+        "zipcode": v.zipcode,
+        "phone": v.phone,
+        "email": v.email,
+        "capacity": v.capacity,
+        "style": v.style,
+        "keywords": v.keywords,
+        "inquiry_url": v.inquiry_url
+        # Remove the photo field for all venues query
+    } for v in venues]
     return response
 
 @app.get("/venues/search")
@@ -185,23 +206,20 @@ async def search_venues(
 
     sorted_venues = sorted(venues, key=lambda v: v.match_score, reverse=True)
 
-    response = [
-        {
-            "id": v.id,
-            "name": v.name,
-            "city": v.city,
-            "zipcode": v.zipcode,
-            "phone": v.phone,
-            "email": v.email,
-            "capacity": v.capacity,
-            "style": v.style,
-            "keywords": v.keywords,
-            "inquiry_url":v.inquiry_url,
-            "match_score": round(v.match_score * 100, 2)
-        }
-        for v in sorted_venues[:15]
-    ]
-
+    response = [{
+        "id": v.id,
+        "name": v.name,
+        "city": v.city,
+        "zipcode": v.zipcode,
+        "phone": v.phone,
+        "email": v.email,
+        "capacity": v.capacity,
+        "style": v.style,
+        "keywords": v.keywords,
+        "inquiry_url": v.inquiry_url,
+        "match_score": round(v.match_score * 100, 2),
+        "photo": process_image(v.photo) if v.photo else None
+    } for v in sorted_venues[:15]]
     return response
 
 if __name__ == "__main__":
