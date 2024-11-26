@@ -6,4 +6,5 @@ pydantic
 python-dotenv
 mysql-connector-python
 sentence-transformers
+numpy==1.26.4
 Pillow
