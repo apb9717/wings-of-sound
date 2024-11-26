@@ -64,6 +64,8 @@ class Venues(Base):
     city = Column(String(50))
     zipcode = Column(Integer)
     phone = Column(Integer)
+    email = Column(String(100))
+    inquiry_url = Column(String(100))
     capacity = Column(Integer)
     style = Column(String(100))
     keywords = Column(Text)
@@ -78,34 +80,48 @@ def calculate_weighted_match_score(user_input, venue, model):
     match_score = 0
     max_score = sum(weights.values())
 
-    # 1. Capacity Comparison (Numeric Range Matching)
+    # Capacity Scoring
     if user_input.get('capacity') and venue.capacity:
         try:
-            user_capacity = user_input['capacity'].split('-')
-            user_min_capacity = int(user_capacity[0])
-            user_max_capacity = int(user_capacity[1]) if len(user_capacity) > 1 else user_min_capacity
+            user_capacity = user_input['capacity']
+            
+            # Handle open-ended capacity with '+'
+            if '+' in user_capacity:
+                user_min_capacity = int(user_capacity.replace('+', '').strip())
+                user_max_capacity = float('inf')  # No upper limit
+            else:
+                user_capacity_range = user_capacity.split('-')
+                user_min_capacity = int(user_capacity_range[0].strip())
+                user_max_capacity = int(user_capacity_range[1].strip()) if len(user_capacity_range) > 1 else float('inf')
+
             venue_capacity = venue.capacity
 
+            # Scoring logic
             if user_min_capacity <= venue_capacity <= user_max_capacity:
                 capacity_similarity = 1  # Perfect match
+            elif venue_capacity < user_min_capacity:
+                capacity_similarity = max(0, 1 - (user_min_capacity - venue_capacity) / user_min_capacity)
             else:
-                capacity_similarity = 1 - min(abs(venue_capacity - user_min_capacity), 
-                                              abs(venue_capacity - user_max_capacity)) / max(user_max_capacity, venue_capacity)
+                capacity_similarity = max(0, 1 - (venue_capacity - user_max_capacity) / venue_capacity)
 
-            capacity_similarity = max(0, capacity_similarity)  # Ensure it's non-negative
             match_score += capacity_similarity * weights['capacity']
-        except ValueError:
-            print("Capacity input format is invalid.")
 
-    # 2. City Comparison (Improved Semantic Similarity)
+        except ValueError:
+            print("Capacity input format is invalid:", user_input['capacity'])
+
+
+    # City Scoring
     if user_input.get('city') and venue.city:
-        city_similarity = util.pytorch_cos_sim(
-            model.encode(user_input['city'].lower()), 
-            model.encode(venue.city.lower())
-        ).item()
+        if user_input['city'].lower() == venue.city.lower():
+            city_similarity = 1
+        else:
+            city_similarity = util.pytorch_cos_sim(
+                model.encode(user_input['city'].lower()),
+                model.encode(venue.city.lower())
+            ).item()
         match_score += city_similarity * weights['city']
 
-    # 3. Style Comparison (Multi-label Classification)
+    # Style Scoring
     if user_input.get('style') and venue.style:
         user_styles = set(user_input['style'].lower().split(','))
         venue_styles = set(venue.style.lower().split(','))
@@ -113,30 +129,23 @@ def calculate_weighted_match_score(user_input, venue, model):
         style_similarity = style_overlap / max(len(user_styles), len(venue_styles))
         match_score += style_similarity * weights['style']
 
-    # 4. Keywords Comparison (Multi-label Classification + Semantic Similarity)
+    # Keyword Scoring
     if user_input.get('keywords') and venue.keywords:
         user_keywords = set(user_input['keywords'].lower().split(','))
         venue_keywords = set(venue.keywords.lower().split(','))
         
-        # Exact match score
-        keyword_overlap = len(user_keywords.intersection(venue_keywords))
-        exact_match_score = keyword_overlap / max(len(user_keywords), len(venue_keywords))
-        
-        # Semantic similarity score
+        exact_match_score = len(user_keywords.intersection(venue_keywords)) / max(len(user_keywords), len(venue_keywords))
         semantic_similarity = util.pytorch_cos_sim(
             model.encode(', '.join(user_keywords)),
             model.encode(', '.join(venue_keywords))
         ).item()
-        
-        # Combine exact match and semantic similarity
-        keyword_similarity = (exact_match_score + semantic_similarity) / 2
+        keyword_similarity = 0.7 * exact_match_score + 0.3 * semantic_similarity
         match_score += keyword_similarity * weights['keywords']
 
-    # Normalize the final match score and apply a more lenient scaling
     normalized_score = match_score / max_score
-    final_score = min(normalized_score * 1.5, 1.0)  # Apply a 1.5x multiplier, capped at 1.0
+    final_score = min(normalized_score * 1.5, 1.0)
+    return final_score
 
-    return final_score  # Return as a percentage
 
 @app.get("/venues/")
 async def get_all_venues(db: Session = Depends(get_db)):
@@ -148,9 +157,11 @@ async def get_all_venues(db: Session = Depends(get_db)):
             "city": v.city,
             "zipcode": v.zipcode,
             "phone": v.phone,
+            "email": v.email,
             "capacity": v.capacity,
             "style": v.style,
-            "keywords": v.keywords
+            "keywords": v.keywords,
+            "inquiry_url": v.inquiry_url
         }
         for v in venues
     ]
@@ -181,12 +192,14 @@ async def search_venues(
             "city": v.city,
             "zipcode": v.zipcode,
             "phone": v.phone,
+            "email": v.email,
             "capacity": v.capacity,
             "style": v.style,
             "keywords": v.keywords,
+            "inquiry_url":v.inquiry_url,
             "match_score": round(v.match_score * 100, 2)
         }
-        for v in sorted_venues
+        for v in sorted_venues[:15]
     ]
 
     return response
