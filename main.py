@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
-from sqlalchemy import Column, Integer, String, Text, create_engine, LargeBinary
+from sqlalchemy import Column, Integer, String, Text, LargeBinary, create_engine  # Added create_engine import
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,7 +52,7 @@ def createConnection():
 # SQLAlchemy engine setup
 def get_db():
     connection, DATABASE_URL = createConnection()
-    db = sessionmaker(bind=create_engine(DATABASE_URL))()
+    db = sessionmaker(bind=create_engine(DATABASE_URL))()  # Corrected here with create_engine import
     try:
         yield db
     finally:
@@ -75,7 +75,6 @@ class Venues(Base):
     photo = Column(LargeBinary)  # Image URL for the venue
 
 
-
 def calculate_weighted_match_score(user_input, venue, model):
     weights = {
         'capacity': 0.3,
@@ -89,14 +88,11 @@ def calculate_weighted_match_score(user_input, venue, model):
     # City Scoring
     city_similarity = 0
     if user_input.get('city') and venue.city:
-        # Exact Match for City (strict matching: only "Brooklyn" or "Manhattan")
         if user_input['city'].strip().lower() == venue.city.strip().lower():
             city_similarity = 1  # Perfect match
         else:
-            # If city doesn't match, set similarity to 0
             city_similarity = 0
 
-    # Apply city score directly to match score
     match_score += city_similarity * weights['city']
 
     # Capacity Scoring
@@ -104,20 +100,17 @@ def calculate_weighted_match_score(user_input, venue, model):
         try:
             user_capacity = user_input['capacity']
             
-            # Handle open-ended capacity with '+' (e.g., "200+")
             if '+' in user_capacity:
                 user_min_capacity = int(user_capacity.replace('+', '').strip())
                 user_max_capacity = float('inf')  # No upper limit
             else:
-                # If user capacity is just a single number, convert to int
                 user_min_capacity = int(user_capacity)
                 user_max_capacity = user_min_capacity
 
             venue_capacity = venue.capacity
 
-            # Scoring logic
             if user_min_capacity <= venue_capacity <= user_max_capacity:
-                capacity_similarity = 1  # Perfect match
+                capacity_similarity = 1
             elif venue_capacity < user_min_capacity:
                 capacity_similarity = max(0, 1 - (user_min_capacity - venue_capacity) / user_min_capacity)
             else:
@@ -151,10 +144,9 @@ def calculate_weighted_match_score(user_input, venue, model):
 
         match_score += keyword_similarity * weights['keywords']
 
-
-    # Normalize the score (we apply the city penalty before normalizing)
+    # Normalize the score
     normalized_score = match_score / max_score
-    final_score = min(normalized_score * 1.5, 1.0)  # Ensure the final score does not exceed 1.0
+    final_score = min(normalized_score * 1.5, 1.0)  # Ensure score does not exceed 1.0
 
     return final_score
 
@@ -169,10 +161,23 @@ def process_image(photo):
     return None
 
 
-# Update the response to include the image_url
-@app.get("/venues/")
+@app.get("/venues/")  # Get all venues with pagination
 async def get_all_venues(db: Session = Depends(get_db)):
-    venues = db.query(Venues).all()
+    # Fetch only necessary columns excluding 'photo'
+    venues = db.query(
+        Venues.id,
+        Venues.name,
+        Venues.city,
+        Venues.zipcode,
+        Venues.phone,
+        Venues.email,
+        Venues.capacity,
+        Venues.style,
+        Venues.keywords,
+        Venues.inquiry_url
+    ).all()
+
+    # Prepare the response with necessary venue details
     response = [{
         "id": v.id,
         "name": v.name,
@@ -184,16 +189,15 @@ async def get_all_venues(db: Session = Depends(get_db)):
         "style": v.style,
         "keywords": v.keywords,
         "inquiry_url": v.inquiry_url
-        # Remove the photo field for all venues query
     } for v in venues]
+
     return response
 
-@app.get("/venues/search")
+
+@app.get("/venues/search")  # Search venues based on user input
 async def search_venues(
     capacity: str = None, city: str = None, style: str = None, keywords: str = None, db: Session = Depends(get_db)
 ):
-    venues = db.query(Venues).all()
-
     user_input = {
         'capacity': capacity,
         'city': city,
@@ -201,26 +205,55 @@ async def search_venues(
         'keywords': keywords,
     }
 
+    # Fetch venues
+    venues = db.query(
+        Venues.id,
+        Venues.name,
+        Venues.city,
+        Venues.zipcode,
+        Venues.phone,
+        Venues.email,
+        Venues.capacity,
+        Venues.style,
+        Venues.keywords,
+        Venues.inquiry_url
+    ).all()
+
+    # Calculate match scores for all venues
+    sorted_venues = []
     for venue in venues:
-        venue.match_score = calculate_weighted_match_score(user_input, venue, embedding_model)
+        match_score = calculate_weighted_match_score(user_input, venue, embedding_model)
+        sorted_venues.append({
+            "id": venue.id,
+            "name": venue.name,
+            "city": venue.city,
+            "zipcode": venue.zipcode,
+            "phone": venue.phone,
+            "email": venue.email,
+            "capacity": venue.capacity,
+            "style": venue.style,
+            "keywords": venue.keywords,
+            "inquiry_url": venue.inquiry_url,
+            "match_score": round(match_score * 100, 2),
+            "photo": None  # Initially, no photo
+        })
 
-    sorted_venues = sorted(venues, key=lambda v: v.match_score, reverse=True)
+    # Sort by match score
+    sorted_venues.sort(key=lambda v: v["match_score"], reverse=True)
 
-    response = [{
-        "id": v.id,
-        "name": v.name,
-        "city": v.city,
-        "zipcode": v.zipcode,
-        "phone": v.phone,
-        "email": v.email,
-        "capacity": v.capacity,
-        "style": v.style,
-        "keywords": v.keywords,
-        "inquiry_url": v.inquiry_url,
-        "match_score": round(v.match_score * 100, 2),
-        "photo": process_image(v.photo) if v.photo else None
-    } for v in sorted_venues[:15]]
-    return response
+    # Fetch the images for the top 15 venues
+    venue_ids = [v['id'] for v in sorted_venues[:15]]  # Get the IDs of the top 15 venues
+    venues_with_images = db.query(Venues.id, Venues.photo).filter(Venues.id.in_(venue_ids)).all()
+
+    # Create a mapping of venue ID to image for quick lookup
+    venue_images = {v.id: process_image(v.photo) if v.photo else None for v in venues_with_images}
+
+    # Add images to the response
+    for venue in sorted_venues[:15]:
+        venue["photo"] = venue_images.get(venue["id"])
+
+    return sorted_venues[:15]  # Return top 15 venues
+
 
 if __name__ == "__main__":
     import uvicorn
