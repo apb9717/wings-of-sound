@@ -255,9 +255,5 @@ async def search_venues(
     return sorted_venues[:15]  # Return top 15 venues
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
-
 createConnection()
 get_db()
