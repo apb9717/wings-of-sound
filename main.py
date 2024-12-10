@@ -151,16 +151,6 @@ def calculate_weighted_match_score(user_input, venue, model):
     return final_score
 
 
-def process_image(photo):
-    if photo:
-        img = Image.open(BytesIO(photo))
-        img = img.convert('RGB')
-        buffered = BytesIO()
-        img.save(buffered, format="JPEG", quality=85)
-        return base64.b64encode(buffered.getvalue()).decode('utf-8')
-    return None
-
-
 @app.get("/venues/")  # Get all venues with pagination
 async def get_all_venues(db: Session = Depends(get_db)):
     # Fetch only necessary columns excluding 'photo'
@@ -174,7 +164,8 @@ async def get_all_venues(db: Session = Depends(get_db)):
         Venues.capacity,
         Venues.style,
         Venues.keywords,
-        Venues.inquiry_url
+        Venues.inquiry_url,
+        Venues.photo
     ).all()
 
     # Prepare the response with necessary venue details
@@ -188,7 +179,8 @@ async def get_all_venues(db: Session = Depends(get_db)):
         "capacity": v.capacity,
         "style": v.style,
         "keywords": v.keywords,
-        "inquiry_url": v.inquiry_url
+        "inquiry_url": v.inquiry_url,
+        "photo": v.photo
     } for v in venues]
 
     return response
@@ -216,7 +208,8 @@ async def search_venues(
         Venues.capacity,
         Venues.style,
         Venues.keywords,
-        Venues.inquiry_url
+        Venues.inquiry_url,
+        Venues.photo  # Keep photo URL in the database
     ).all()
 
     # Calculate match scores for all venues
@@ -235,25 +228,19 @@ async def search_venues(
             "keywords": venue.keywords,
             "inquiry_url": venue.inquiry_url,
             "match_score": round(match_score * 100, 2),
-            "photo": None  # Initially, no photo
+            "photo": venue.photo  # Directly include the photo URL
         })
 
     # Sort by match score
     sorted_venues.sort(key=lambda v: v["match_score"], reverse=True)
 
-    # Fetch the images for the top 15 venues
-    venue_ids = [v['id'] for v in sorted_venues[:15]]  # Get the IDs of the top 15 venues
-    venues_with_images = db.query(Venues.id, Venues.photo).filter(Venues.id.in_(venue_ids)).all()
+    # Return the top 15 venues without the photo URL in the response
+    return sorted_venues[:15]
 
-    # Create a mapping of venue ID to image for quick lookup
-    venue_images = {v.id: process_image(v.photo) if v.photo else None for v in venues_with_images}
 
-    # Add images to the response
-    for venue in sorted_venues[:15]:
-        venue["photo"] = venue_images.get(venue["id"])
-
-    return sorted_venues[:15]  # Return top 15 venues
-
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
 
 createConnection()
 get_db()
