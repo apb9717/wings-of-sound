@@ -72,7 +72,7 @@ class Venues(Base):
     capacity = Column(Integer)
     style = Column(String(100))
     keywords = Column(Text)
-    photo = Column(LargeBinary)  # Image URL for the venue
+    photo = Column(String(255))  # Image URL for the venue
 
 
 def calculate_weighted_match_score(user_input, venue, model):
