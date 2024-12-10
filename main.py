@@ -244,9 +244,13 @@ async def search_venues(
     # Fetch the images for the top 15 venues
     venue_ids = [v['id'] for v in sorted_venues[:15]]  # Get the IDs of the top 15 venues
     venues_with_images = db.query(Venues.id, Venues.photo).filter(Venues.id.in_(venue_ids)).all()
+    
 
     # Create a mapping of venue ID to image for quick lookup
-    venue_images = {v.id: process_image(v.photo) if v.photo else None for v in venues_with_images}
+    # venue_images = {v.id: process_image(v.photo) if v.photo else None for v in venues_with_images}
+    
+    # fixed venue_images, no need to process blob images 
+    venue_images = {v.id: v.photo if v.photo else None for v in venues_with_images}
 
     # Add images to the response
     for venue in sorted_venues[:15]:
