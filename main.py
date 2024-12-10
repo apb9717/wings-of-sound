@@ -75,12 +75,14 @@ class Venues(Base):
     photo = Column(String(255))  # Image URL for the venue
 
 
+from sentence_transformers import util
+
 def calculate_weighted_match_score(user_input, venue, model):
     weights = {
         'capacity': 0.3,
         'city': 0.2,
         'style': 0.3,
-        'keywords': 0.2,
+        'keywords': 0.2,  # Fine-tune this weight if necessary
     }
     match_score = 0
     max_score = sum(weights.values())
@@ -89,10 +91,9 @@ def calculate_weighted_match_score(user_input, venue, model):
     city_similarity = 0
     if user_input.get('city') and venue.city:
         if user_input['city'].strip().lower() == venue.city.strip().lower():
-            city_similarity = 1  # Perfect match
+            city_similarity = 1  # Exact city match
         else:
             city_similarity = 0
-
     match_score += city_similarity * weights['city']
 
     # Capacity Scoring
@@ -121,26 +122,23 @@ def calculate_weighted_match_score(user_input, venue, model):
         except ValueError:
             print("Capacity input format is invalid:", user_input['capacity'])
 
-    # Style Scoring
+    # Style Scoring (Updated to support partial matches)
     if user_input.get('style') and venue.style:
-        user_styles = set(user_input['style'].lower().split(','))
-        venue_styles = set(venue.style.lower().split(','))
-        style_overlap = len(user_styles.intersection(venue_styles))
-        style_similarity = style_overlap / max(len(user_styles), len(venue_styles))
+        user_styles = user_input['style'].lower().split(',')
+        venue_styles = venue.style.lower().split(',')
+        
+        # Matching substrings of user input in venue styles
+        style_similarity = sum(1 for user_style in user_styles if any(user_style in venue_style for venue_style in venue_styles)) / len(user_styles)
 
         match_score += style_similarity * weights['style']
 
-    # Keyword Scoring
+    # Keyword Scoring (Updated to support partial matches)
     if user_input.get('keywords') and venue.keywords:
-        user_keywords = set(user_input['keywords'].lower().split(','))
-        venue_keywords = set(venue.keywords.lower().split(','))
+        user_keywords = user_input['keywords'].lower().split(',')
+        venue_keywords = venue.keywords.lower().split(',')
         
-        exact_match_score = len(user_keywords.intersection(venue_keywords)) / max(len(user_keywords), len(venue_keywords))
-        semantic_similarity = util.pytorch_cos_sim(
-            model.encode(', '.join(user_keywords)),
-            model.encode(', '.join(venue_keywords))
-        ).item()
-        keyword_similarity = 0.7 * exact_match_score + 0.3 * semantic_similarity
+        # Matching substrings of user input in venue keywords
+        keyword_similarity = sum(1 for user_keyword in user_keywords if any(user_keyword in venue_keyword for venue_keyword in venue_keywords)) / len(user_keywords)
 
         match_score += keyword_similarity * weights['keywords']
 
@@ -149,6 +147,7 @@ def calculate_weighted_match_score(user_input, venue, model):
     final_score = min(normalized_score * 1.5, 1.0)  # Ensure score does not exceed 1.0
 
     return final_score
+
 
 
 @app.get("/venues/")  # Get all venues with pagination
@@ -212,6 +211,10 @@ async def search_venues(
         Venues.photo  # Keep photo URL in the database
     ).all()
 
+    # Filter venues by exact city match (if city is provided)
+    if city:
+        venues = [venue for venue in venues if venue.city.strip().lower() == city.strip().lower()]
+
     # Calculate match scores for all venues
     sorted_venues = []
     for venue in venues:
@@ -234,8 +237,9 @@ async def search_venues(
     # Sort by match score
     sorted_venues.sort(key=lambda v: v["match_score"], reverse=True)
 
-    # Return the top 15 venues without the photo URL in the response
+    # Return the top 15 venues (still ordered by match score)
     return sorted_venues[:15]
+
 
 
 if __name__ == "__main__":
